@@ -1,5 +1,7 @@
 import base64
 from datetime import datetime
+import json
+import os
 
 from img2table.document import Image as DocImage
 from PIL import Image
@@ -31,9 +33,9 @@ class SuryaOCR(OCRInstance):
         """
         self.detection_predictor = DetectionPredictor()
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            "Qwen/Qwen2.5-VL-3B-Instruct", torch_dtype="auto", device_map="auto"
+            "Qwen/Qwen2.5-VL-7B-Instruct", torch_dtype="auto", device_map="auto"
         )
-        self.processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+        self.processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
 
 
     def content(self, document: Document) -> typing.List["surya.schema.OCRResult"]:
@@ -56,13 +58,10 @@ class SuryaOCR(OCRInstance):
             all_polygons.extend(polygons)
             all_bboxes.extend([i.bbox for i in det_pred.bboxes])
 
+        ocr_start_time = time.time()
         ocr = []
         for idx, (slice_image, polygon, bbox) in enumerate(zip(all_slices, all_polygons, all_bboxes)):
             print("{idx}/{total}".format(idx=idx, total=len(all_slices)))
-            # print(slice_image, polygon)
-            # print(slice_image.size)
-            # slice_image.show()
-            # time.sleep(5)
             rec_text = self.get_recognition(self.convert_to_base64(slice_image))
             print(rec_text)
             if 'sorry' in rec_text.strip().lower() or  'unable' in rec_text.strip().lower() or "can't" in rec_text.strip().lower() :
@@ -78,6 +77,7 @@ class SuryaOCR(OCRInstance):
                 }
             )
             # print(ocr)
+        ocr_process_time = time.time() - ocr_start_time
 
         d = {
             "status": 'complete',
@@ -89,6 +89,26 @@ class SuryaOCR(OCRInstance):
                 }
             ]
         }
+
+        savables = {
+            'num_cells': len(ocr),
+            'ocr_time': ocr_process_time
+        }
+
+        filename = 'logs.json'
+        if os.path.exists(filename):
+            with open(filename, 'r') as f:
+                data = json.load(f)
+            data.append(savables)
+
+        else:
+            data = [
+                savables
+            ]
+        
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=4)
+
         return d["pages"]
 
     def get_recognition(self, image: str):
@@ -213,19 +233,19 @@ class SuryaOCRAgent():
             borderless_tables=True,
             min_confidence=50
         )
-        df = pd.read_excel(f'{user_prompt}-result.xlsx')
-        return df.to_string(index=False, header=False)
+        # df = pd.read_excel(f'{user_prompt}-single.xlsx')
+        # return df.to_string(index=False, header=False)
 
 
 
-img_pah = 'HF21-DECK MACHINERY.pdf_134.png'
+# img_pah = 'HF21-DECK MACHINERY.pdf_134.png'
 
-def convert_to_base64(image_path):
-    with open(image_path, "rb") as image_file:
-        base64_string = base64.b64encode(image_file.read()).decode("utf-8")
-    return base64_string
+# def convert_to_base64(image_path):
+#     with open(image_path, "rb") as image_file:
+#         base64_string = base64.b64encode(image_file.read()).decode("utf-8")
+#     return base64_string
 
-agent = SuryaOCRAgent()
-start_time = time.time()
-agent(convert_to_base64(img_pah), "super_coool")
-print(time.time() - start_time)
+# agent = SuryaOCRAgent()
+# start_time = time.time()
+# agent(convert_to_base64(img_pah), "super_coool")
+# print(time.time() - start_time)
